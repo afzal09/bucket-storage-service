@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+data/blobs/*
+!data/blobs/.gitkeep
+data/*.sqlite
+*.log
