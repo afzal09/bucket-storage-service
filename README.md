@@ -5,7 +5,7 @@ docs in Notion ("Object Storage System (NestJS)" — HLD/LLD).
 
 ## Stack
 
-- **NestJS 10** + Express
+- **NestJS 12** + Express 5
 - **Postgres** (via Sequelize/`@nestjs/sequelize`) for metadata — buckets, objects,
   versions, policies, access keys, audit logs
 - **Local disk** for object bytes by default, with an `S3CompatibleStorageAdapter`
@@ -31,11 +31,44 @@ Then:
 
 ```bash
 npm run build
-npm run start        # or: npm run start:dev for watch mode
+npm run start        # or: npm run dev for watch mode
 ```
 
 The app listens on `PORT` (default `3000`) and creates its own tables on boot
 (`synchronize: true` — fine for dev, swap for real migrations before production).
+
+The copied `.env.example` sets `PORT=4000`; use that port in examples unless you
+override it. The fallback when PORT is absent is 3000.
+
+## TypeScript SDK and detailed docs
+
+Install published SDK releases directly from npm:
+
+```bash
+npm install @bucket-storage/sdk
+```
+
+Use the dependency-free Node.js SDK in [packages/sdk](packages/sdk/README.md) to
+sign requests and stream uploads/downloads:
+
+```bash
+npm run build:sdk
+npm pack ./packages/sdk
+```
+
+Install the generated tarball in a consumer with `npm install /path/to/bucket-storage-sdk-0.1.0.tgz`.
+The SDK supports buckets/configuration, objects/versions/tags/copy, presigned URLs,
+and multipart uploads. It performs no automatic retries and does not follow redirects.
+Run its focused regression checks with `npm run test:sdk`.
+
+- [Architecture and implementation reference](docs/ARCHITECTURE.md)
+- [Product setup and usage guide](docs/USAGE-GUIDE.md)
+- [Complete HTTP contract](docs/API-CONTRACT-SYNC.md)
+
+Object routes use Express 5 named wildcards (`/:bucket/*key`); the signature guard
+joins decoded wildcard segments into the full key. JSON object PUTs remain raw
+streams. Multipart replacements stage new bytes before saving metadata/deleting
+old bytes, and presigned URLs enforce their signed GET or PUT method.
 
 ## Authentication
 
@@ -67,32 +100,32 @@ node scripts/smoke-test.js   # in another — exercises the whole API
 
 ## API surface
 
-| Route | Purpose |
-|---|---|
-| `PUT /:bucket` | Create bucket, or configure it via `?policy` / `?versioning` / `?lifecycle` / `?encryption` / `?cors` |
-| `GET /` | List buckets |
-| `GET /:bucket` | List objects, or read config via the same `?` subresources, or `?versions` |
-| `DELETE /:bucket` | Delete bucket (must be empty) |
-| `PUT /:bucket/:key` | Upload object (or copy, via `x-amz-copy-source` header) |
-| `GET /:bucket/:key` | Download object (`Range` supported), or `?tagging` / `?presign=GET\|PUT` |
-| `HEAD /:bucket/:key` | Object metadata only |
-| `DELETE /:bucket/:key` | Delete (soft delete-marker if versioning is enabled) |
-| `POST /:bucket/:key?uploads` | Initiate multipart upload |
-| `PUT /:bucket/:key?partNumber=&uploadId=` | Upload a part |
-| `POST /:bucket/:key?uploadId=` | Complete multipart upload |
-| `DELETE /:bucket/:key?uploadId=` | Abort multipart upload |
+| Route                                     | Purpose                                                                                               |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `PUT /:bucket`                            | Create bucket, or configure it via `?policy` / `?versioning` / `?lifecycle` / `?encryption` / `?cors` |
+| `GET /`                                   | List buckets                                                                                          |
+| `GET /:bucket`                            | List objects, or read config via the same `?` subresources, or `?versions`                            |
+| `DELETE /:bucket`                         | Delete bucket (must be empty)                                                                         |
+| `PUT /:bucket/:key`                       | Upload object (or copy, via `x-amz-copy-source` header)                                               |
+| `GET /:bucket/:key`                       | Download object (`Range` supported), or `?tagging` / `?presign=GET\|PUT`                              |
+| `HEAD /:bucket/:key`                      | Object metadata only                                                                                  |
+| `DELETE /:bucket/:key`                    | Delete (soft delete-marker if versioning is enabled)                                                  |
+| `POST /:bucket/:key?uploads`              | Initiate multipart upload                                                                             |
+| `PUT /:bucket/:key?partNumber=&uploadId=` | Upload a part                                                                                         |
+| `POST /:bucket/:key?uploadId=`            | Complete multipart upload                                                                             |
+| `DELETE /:bucket/:key?uploadId=`          | Abort multipart upload                                                                                |
 
 ## Configuration (`.env`)
 
-| Var | Purpose |
-|---|---|
-| `DB_DIALECT`, `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME` | Postgres connection |
-| `STORAGE_ADAPTER` | `local` (default) or `s3` |
-| `STORAGE_LOCAL_ROOT` | Where local-disk blobs live |
-| `S3_*` | Only used when `STORAGE_ADAPTER=s3` — points at any S3-compatible endpoint (AWS, MinIO, etc.) |
-| `REQUEST_SIGNING_SECRET` | Unused placeholder — actual signing keys are per-access-key, generated at `/auth/keys` |
-| `ENCRYPTION_MASTER_KEY` | Wraps per-object data keys for SSE_S3/SSE_KMS-style encryption. **Change this in any real deployment.** |
-| `PRESIGNED_URL_SECRET` | Signs presigned URLs |
+| Var                                                                         | Purpose                                                                                                 |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `DB_DIALECT`, `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME` | Postgres connection                                                                                     |
+| `STORAGE_ADAPTER`                                                           | `local` (default) or `s3`                                                                               |
+| `STORAGE_LOCAL_ROOT`                                                        | Where local-disk blobs live                                                                             |
+| `S3_*`                                                                      | Only used when `STORAGE_ADAPTER=s3` — points at any S3-compatible endpoint (AWS, MinIO, etc.)           |
+| `REQUEST_SIGNING_SECRET`                                                    | Unused placeholder — actual signing keys are per-access-key, generated at `/auth/keys`                  |
+| `ENCRYPTION_MASTER_KEY`                                                     | Wraps per-object data keys for SSE_S3/SSE_KMS-style encryption. **Change this in any real deployment.** |
+| `PRESIGNED_URL_SECRET`                                                      | Signs presigned URLs                                                                                    |
 
 ## Deviations from the reviewed LLD
 
