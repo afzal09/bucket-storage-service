@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
 import { Principal } from '../common/interfaces/principal.interface';
@@ -20,6 +20,9 @@ export class PresignedUrlService {
     expiresInSeconds: number,
     principal: Principal,
   ): string {
+    if (method !== 'GET' && method !== 'PUT') {
+      throw new BadRequestException('Presigned method must be GET or PUT');
+    }
     const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
     const params = new URLSearchParams({
       method,
@@ -30,16 +33,20 @@ export class PresignedUrlService {
     const signature = this.sign(bucket, key, params);
     params.set('signature', signature);
 
-    return `/${bucket}/${key}?${params.toString()}`;
+    const path = `/${encodeURIComponent(bucket)}/${key.split('/').map(encodeURIComponent).join('/')}`;
+    return `${path}?${params.toString()}`;
   }
 
-  verify(bucket: string, key: string, query: Record<string, string>): Principal {
+  verify(bucket: string, key: string, query: Record<string, string>, requestMethod: string): Principal {
     const { signature, ...rest } = query;
     const params = new URLSearchParams(rest);
     const expected = this.sign(bucket, key, params);
 
     if (signature !== expected) {
       throw new SignatureInvalidException('Presigned URL signature does not match');
+    }
+    if ((query.method !== 'GET' && query.method !== 'PUT') || query.method !== requestMethod.toUpperCase()) {
+      throw new SignatureInvalidException('Presigned URL does not allow this HTTP method');
     }
     if (Date.now() / 1000 > Number(query.expires)) {
       throw new SignatureInvalidException('Presigned URL has expired');

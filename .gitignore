@@ -5,3 +5,4 @@ data/blobs/*
 !data/blobs/.gitkeep
 data/*.sqlite
 *.log
+*.tsbuildinfo

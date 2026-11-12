@@ -1,7 +1,7 @@
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Readable } from 'stream';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { MultipartUpload, MultipartPart } from './entities/multipart-upload.entity';
 import { BucketsService } from '../buckets/buckets.service';
 import { ObjectsService, PutObjectHeaders } from '../objects/objects.service';
@@ -13,6 +13,8 @@ const MIN_PART_SIZE = 5 * 1024 * 1024; // 5MB, matches S3's rule (waived for the
 
 @Injectable()
 export class MultipartService {
+  private readonly logger = new Logger(MultipartService.name);
+
   constructor(
     @InjectModel(MultipartUpload) private readonly uploadModel: typeof MultipartUpload,
     @InjectModel(MultipartPart) private readonly partModel: typeof MultipartPart,
@@ -31,23 +33,37 @@ export class MultipartService {
     const upload = await this.findUpload(uploadId);
     const pointer = this.buildPartPointer(uploadId, partNumber);
 
-    const { size, checksum } = await this.storageService.write(pointer, stream);
+    let persisted = false;
+    try {
+      const { size, checksum } = await this.storageService.write(pointer, stream);
+      const existing = await this.partModel.findOne({ where: { uploadRecordId: upload.id, partNumber } });
+      if (existing) {
+        const previousPointer = existing.storagePointer;
+        await existing.update({ etag: checksum, size, storagePointer: pointer });
+        persisted = true;
+        await this.storageService.delete(previousPointer);
+      } else {
+        await this.partModel.create({
+          uploadRecordId: upload.id,
+          partNumber,
+          etag: checksum,
+          size,
+          storagePointer: pointer,
+        } as any);
+        persisted = true;
+      }
 
-    const existing = await this.partModel.findOne({ where: { uploadRecordId: upload.id, partNumber } });
-    if (existing) {
-      await this.storageService.delete(existing.storagePointer);
-      await existing.update({ etag: checksum, size, storagePointer: pointer });
-    } else {
-      await this.partModel.create({
-        uploadRecordId: upload.id,
-        partNumber,
-        etag: checksum,
-        size,
-        storagePointer: pointer,
-      } as any);
+      return { etag: checksum, size };
+    } catch (error) {
+      // Once metadata persistence is acknowledged, keep the new pointer even
+      // when deleting old bytes fails. Otherwise clean up the staged attempt.
+      if (!persisted) {
+        await this.storageService.delete(pointer).catch((cleanupError: Error) => {
+          this.logger.warn(`Failed to clean up part ${pointer}: ${cleanupError.message}`);
+        });
+      }
+      throw error;
     }
-
-    return { etag: checksum, size };
   }
 
   async complete(uploadId: string, parts: { partNumber: number; etag: string }[]): Promise<PutObjectResultDto> {
@@ -126,6 +142,7 @@ export class MultipartService {
   }
 
   private buildPartPointer(uploadId: string, part: number | 'final'): string {
-    return createHash('sha256').update(`${uploadId}:part:${part}`).digest('hex');
+    const suffix = part === 'final' ? 'final' : `${part}:${randomUUID()}`;
+    return createHash('sha256').update(`${uploadId}:part:${suffix}`).digest('hex');
   }
 }

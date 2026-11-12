@@ -21,9 +21,16 @@ export class SignatureGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
 
+    // Express 5 named wildcards resolve to decoded path-segment arrays.
+    // Controllers and presigned signatures use the complete object key.
+    const params = request.params as Record<string, string | string[]>;
+    if (Array.isArray(params.key)) params.key = params.key.join('/');
+
     if (request.query.signature) {
       const { bucket, key } = request.params as { bucket: string; key?: string };
-      const principal = this.presignedUrlService.verify(bucket, key || '', request.query as Record<string, string>);
+      const principal = this.presignedUrlService.verify(
+        bucket, key || '', request.query as Record<string, string>, request.method,
+      );
       (request as any).principal = principal;
       return true;
     }

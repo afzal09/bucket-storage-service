@@ -28,7 +28,7 @@ import { TagSetDto } from './dto/object.dto';
 import { CompletePartsDto } from '../multipart/dto/multipart.dto';
 
 /**
- * Owns every route rooted at `/:bucket/:key(*)`. Multipart upload
+ * Owns every route rooted at `/:bucket/*key`. Multipart upload
  * (?uploads, ?uploadId, ?partNumber) turned out to share this exact route
  * space too — a separate MultipartController with its own @Put/@Post on the
  * same path would collide with these routes at the Express layer, since
@@ -47,7 +47,7 @@ export class ObjectsController {
     private readonly presignedUrlService: PresignedUrlService,
   ) {}
 
-  @Put(':key(*)')
+  @Put('*key')
   async putObject(
     @Param('bucket') bucket: string,
     @Param('key') key: string,
@@ -88,7 +88,7 @@ export class ObjectsController {
    * explicitly (skip the body, keep the headers) rather than as a
    * dead second handler.
    */
-  @Get(':key(*)')
+  @Get('*key')
   async getObject(
     @Param('bucket') bucket: string,
     @Param('key') key: string,
@@ -107,11 +107,12 @@ export class ObjectsController {
     }
 
     if ('presign' in query) {
-      await this.authorize(principal, 'GetObject', bucket, key);
+      const method = (query.presign || 'GET') as 'GET' | 'PUT';
+      await this.authorize(principal, method === 'PUT' ? 'PutObject' : 'GetObject', bucket, key);
       const url = this.presignedUrlService.generate(
         bucket,
         key,
-        (query.presign as 'GET' | 'PUT') || 'GET',
+        method,
         Number(query.expiresIn) || 3600,
         principal,
       );
@@ -148,7 +149,7 @@ export class ObjectsController {
     stream.pipe(res);
   }
 
-  @Delete(':key(*)')
+  @Delete('*key')
   async deleteObject(
     @Param('bucket') bucket: string,
     @Param('key') key: string,
@@ -165,7 +166,7 @@ export class ObjectsController {
     return this.objectsService.deleteObject(bucket, key, query.versionId);
   }
 
-  @Post(':key(*)')
+  @Post('*key')
   async postObjectSubresource(
     @Param('bucket') bucket: string,
     @Param('key') key: string,
