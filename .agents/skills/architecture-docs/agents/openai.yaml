@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Architecture Docs'
+  short_description: 'Detailed architecture diagrams and endpoint contracts'
+  default_prompt: 'Use $architecture-docs to document this feature in depth, stop at other service calls, and include endpoint request/response contracts.'
