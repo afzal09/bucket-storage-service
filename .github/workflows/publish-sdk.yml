@@ -1,0 +1,64 @@
+name: Publish SDK to npm
+
+on:
+  push:
+    tags:
+      - 'sdk-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact version in packages/sdk/package.json (for example 0.1.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Match release version to package
+        id: release
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pkg = require('./packages/sdk/package.json');
+          const expected = process.env.GITHUB_REF_TYPE === 'tag'
+            ? `sdk-v${pkg.version}` : pkg.version;
+          const actual = process.env.GITHUB_REF_TYPE === 'tag'
+            ? process.env.GITHUB_REF_NAME : process.env.REQUESTED_VERSION;
+          if (pkg.name !== '@bucket-storage/sdk' || actual !== expected) {
+            throw new Error(`Release must match @bucket-storage/sdk ${expected}`);
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            `dist-tag=${pkg.version.includes('-') ? 'next' : 'latest'}\n`);
+          NODE
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run typecheck:sdk
+      - run: npm run test:sdk
+      - name: Inspect package contents
+        run: npm pack ./packages/sdk --dry-run
+      - name: Publish through npm trusted publishing
+        env:
+          DIST_TAG: ${{ steps.release.outputs.dist-tag }}
+        run: npm publish ./packages/sdk --access public --tag "$DIST_TAG"

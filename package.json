@@ -1,17 +1,20 @@
 {
   "name": "object-storage-system",
   "version": "0.1.0",
-  "description": "S3-shaped object storage service built on NestJS + Sequelize",
   "private": true,
+  "description": "S3-shaped object storage service built on NestJS + Sequelize",
   "scripts": {
     "build": "nest build",
+    "build:sdk": "npm --prefix packages/sdk run build",
+    "typecheck": "tsc --noEmit --incremental false -p tsconfig.build.json",
+    "typecheck:sdk": "npm --prefix packages/sdk run typecheck",
+    "test:sdk": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --runTestsByPath packages/sdk/tests/sdk.integration.spec.ts packages/sdk/tests/sdk.transport.spec.ts src/multipart/tests/multipart.service.spec.ts src/access-control/tests/presigned-url.spec.ts",
     "start": "nest start",
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
-    "lint": "eslint \"src/**/*.ts\" --fix",
+    "lint": "eslint \"src/**/*.ts\" \"packages/sdk/tests/**/*.ts\" --fix",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
-    "typecheck": "tsc --noEmit --incremental false -p tsconfig.build.json"
+    "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --runTestsByPath packages/sdk/tests/sdk.integration.spec.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.629.0",
